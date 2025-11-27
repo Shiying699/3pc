@@ -8,8 +8,8 @@
 
 using namespace rss_protocols;
 
-static uint32_t num = 100;
-static bool print_res = false;
+static uint32_t num = 2;
+static bool print_res = true;
 static int loop = print_res ? 1 : 10;
 static int warm_up = print_res ? 0 : 5;
 static std::vector<uint32_t> x_shape = {num, num};
@@ -54,6 +54,9 @@ void nexp_test(RSSTensor<T> &, RSSTensor<T> &, Parameters<T> &);
 
 template <typename T>
 void max_test(RSSTensor<T> &, RSSTensor<T> &, Parameters<T> &);
+
+template <typename T>
+void table_equal_test(RSSTensor<T> &, RSSTensor<T> &, RSSTensor<T> &, Parameters<T> &);
 
 template <typename T>
 void convert_test(RSSTensor<T> &, int party_id);
@@ -109,53 +112,62 @@ void RssTest::main_test(int party_id)
 
     RSSTensor<ringType> z_share(z_shape);
 
-    // test addition
-    test_func<Party3PC>(add_test<ringType>, "addition", loop, warm_up, x_share, y_share, z_share);
+    // // test addition
+    // test_func<Party3PC>(add_test<ringType>, "addition", loop, warm_up, x_share, y_share, z_share);
+    // open_print(z_share, party_id, print_res);
+
+    // // test multiplication
+    // test_func<Party3PC>(mul_test<ringType>, "multiplication", loop, warm_up, x_share, y_share, z_share);
+    // open_print(z_share, party_id, print_res);
+
+    // // test matMul
+    // test_func<Party3PC>(matmul_test<ringType>, "matmul", loop, warm_up, x_share, y_share, z_share);
+    // open_print(z_share, party_id, print_res);
+
+    // // test greaterEqual
+    // test_func<Party3PC>(ge_test<ringType>, "greater equal", loop, warm_up, x_share, y_share, z_share, parameters);
+    // open_print(z_share, party_id, print_res);
+
+    // // test inverse
+    // test_func<Party3PC>(inv_test<ringType>, "inverse", loop, warm_up, x_share, z_share, parameters);
+    // open_print(z_share, party_id, print_res);
+
+    // // test rsqrt
+    // test_func<Party3PC>(rsqrt_test<ringType>, "rsqrt", loop, warm_up, x_share, z_share, parameters);
+    // open_print(z_share, party_id, print_res);
+
+    // // test softmax
+    // test_func<Party3PC>(softmax_test<ringType>, "softmax", loop, warm_up, x_share, z_share, parameters);
+    // open_print(z_share, party_id, print_res);
+
+    // // test relu
+    // test_func<Party3PC>(relu_test<ringType>, "relu", loop, warm_up, x_share, z_share, parameters);
+    // open_print(z_share, party_id, print_res);
+
+    // // test gelu
+    // test_func<Party3PC>(gelu_test<ringType>, "gelu", loop, warm_up, x_share, z_share, parameters);
+    // open_print(z_share, party_id, print_res);
+
+    // // test nexp
+    // test_func<Party3PC>(nexp_test<ringType>, "nexp", loop, warm_up, x_share, z_share, parameters);
+    // open_print(z_share, party_id, print_res);
+
+    // // test max
+    // RSSTensor<ringType> max_share({num});
+    // test_func<Party3PC>(max_test<ringType>, "max", loop, warm_up, x_share, max_share, parameters);
+    // open_print(max_share, party_id, print_res);
+
+    // test TableEqual
+    test_func<Party3PC>(table_equal_test<ringType>, "table equal", loop, warm_up, x_share, y_share, z_share, parameters);
     open_print(z_share, party_id, print_res);
 
-    // test multiplication
-    test_func<Party3PC>(mul_test<ringType>, "multiplication", loop, warm_up, x_share, y_share, z_share);
-    open_print(z_share, party_id, print_res);
+    // // test TableGreaterEqual
+    // RSSTensor<ringType> max_share({num});
+    // test_func<Party3PC>(max_test<ringType>, "table greater equal", loop, warm_up, x_share, max_share, parameters);
+    // open_print(max_share, party_id, print_res);
 
-    // test matMul
-    test_func<Party3PC>(matmul_test<ringType>, "matmul", loop, warm_up, x_share, y_share, z_share);
-    open_print(z_share, party_id, print_res);
-
-    // test greaterEqual
-    test_func<Party3PC>(ge_test<ringType>, "greater equal", loop, warm_up, x_share, y_share, z_share, parameters);
-    open_print(z_share, party_id, print_res);
-
-    // test inverse
-    test_func<Party3PC>(inv_test<ringType>, "inverse", loop, warm_up, x_share, z_share, parameters);
-    open_print(z_share, party_id, print_res);
-
-    // test rsqrt
-    test_func<Party3PC>(rsqrt_test<ringType>, "rsqrt", loop, warm_up, x_share, z_share, parameters);
-    open_print(z_share, party_id, print_res);
-
-    // test softmax
-    test_func<Party3PC>(softmax_test<ringType>, "softmax", loop, warm_up, x_share, z_share, parameters);
-    open_print(z_share, party_id, print_res);
-
-    // test relu
-    test_func<Party3PC>(relu_test<ringType>, "relu", loop, warm_up, x_share, z_share, parameters);
-    open_print(z_share, party_id, print_res);
-
-    // test gelu
-    test_func<Party3PC>(gelu_test<ringType>, "gelu", loop, warm_up, x_share, z_share, parameters);
-    open_print(z_share, party_id, print_res);
-
-    // test nexp
-    test_func<Party3PC>(nexp_test<ringType>, "nexp", loop, warm_up, x_share, z_share, parameters);
-    open_print(z_share, party_id, print_res);
-
-    // test max
-    RSSTensor<ringType> max_share({num});
-    test_func<Party3PC>(max_test<ringType>, "max", loop, warm_up, x_share, max_share, parameters);
-    open_print(max_share, party_id, print_res);
-
-    // test type conversion
-    test_func<Party3PC>(convert_test<ringType>, "type conversion", loop, warm_up, x_share, party_id);
+    // // test type conversion
+    // test_func<Party3PC>(convert_test<ringType>, "type conversion", loop, warm_up, x_share, party_id);
 }
 
 void RssBenchmarkTest::main_test(int party_id)
@@ -298,6 +310,12 @@ void max_test(RSSTensor<T> &x_share, RSSTensor<T> &z_share, Parameters<T> &param
 {
     max_last_dim(x_share, z_share, param, IS_MALICIOUS);
     macCheckSimulate<T>(MAC_SIZE);
+}
+
+template <typename T>
+void table_equal_test(RSSTensor<T> &x_share, RSSTensor<T> &y_share, RSSTensor<T> &z_share, Parameters<T> &param)
+{
+    table_Equal(x_share, y_share, z_share, param);
 }
 
 template <typename T>

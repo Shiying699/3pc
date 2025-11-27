@@ -60,6 +60,9 @@ namespace rss_protocols
     void restore(RSSTensor<T> &x, Tensor<T> &res, bool malicious = false);
 
     template <typename T>
+    void restore_bit(RSSTensor<T> &x, Tensor<T> &res, bool malicious = false);
+
+    template <typename T>
     void reconstruct_to(int target_id, RSSTensor<T> &x, Tensor<T> &res = NULL, bool malicious = false);
 
     template <typename T>
@@ -164,6 +167,15 @@ namespace rss_protocols
 
     template <typename T>
     void greaterEqual(RSSTensor<T> &x, RSSTensor<T> &y, RSSTensor<T> &res, Parameters<T> &parameter, bool isFloat = true, bool malicious = false);
+
+    template <typename T>
+    void equal_judge(Tensor<T> &x, RSSTensor<T> &res, Parameters<T> &parameter);
+
+    template <typename T>
+    void table_Equal(RSSTensor<T> &x, RSSTensor<T> &y, RSSTensor<T> &res, Parameters<T> &parameter, bool isFloat = true, bool malicious = false);
+
+    template <typename T>
+    void table_greaterEqual(RSSTensor<T> &x, RSSTensor<T> &y, RSSTensor<T> &res, Parameters<T> &parameter, bool isFloat = true, bool malicious = false);
 
     template <typename T>
     void select(RSSTensor<T> &x, RSSTensor<T> &y, RSSTensor<T> &res, Parameters<T> &parameter, bool malicious = false);
@@ -487,6 +499,32 @@ void rss_protocols::restore(RSSTensor<T> &x, Tensor<T> &res, bool malicious)
     {
         res.data[i] = res.data[i] + x.first.data[i] + x.second.data[i];
     }
+}
+
+template <typename T>
+void rss_protocols::restore_bit(RSSTensor<T> &x, Tensor<T> &res, bool malicious)
+{
+    Party3PC &party = Party3PC::getInstance();
+    x.assert_same_shape(res);
+    party.send_tensor_to(party.next_party_id, x.first);
+
+    party.recv_tensor_from(party.pre_party_id, res);
+
+    // if (malicious)
+    // {
+    //     party.send_tensor_to(party.pre_party_id, x.second);
+    //     Tensor<T> tmp(x.shape);
+    //     party.recv_tensor_from(party.next_party_id, tmp);
+
+    //     Tensor<T>::minus(tmp, res, tmp);
+    //     tmp.assert_zero();
+    // }
+
+#pragma omp parallel for
+    for (int i = 0; i < x.size(); i++)
+    {
+        res.data[i] = res.data[i] ^ x.first.data[i] ^ x.second.data[i];
+    }   
 }
 
 template <typename T>
@@ -1671,6 +1709,150 @@ void rss_protocols::greaterEqual(RSSTensor<T> &x, RSSTensor<T> &y, RSSTensor<T> 
     RSSTensor<T> z(x.shape);
     sub(x, y, z);
     nonNegative(z, res, parameter, isFloat, malicious);
+}
+
+template <typename T>
+void rss_protocols::equal_judge(Tensor<T> &x, RSSTensor<T> &res, Parameters<T> &parameter)
+{
+    Party3PC &party = Party3PC::getInstance();
+    RSSTensor<uint8_t> table_1 = parameter.equal_param.table_1;
+    uint32_t size = x.size();
+    uint8_t d_size = sizeof(T);
+
+    res.zeros();
+
+#pragma omp parallel for
+    for (int i = 0; i < size; i++)
+    {
+        for (int j = 0; j < d_size; j++)
+        {
+            uint8_t tmp_v = (x.data[i] >> (8 * j)) & 0xFF;
+            uint32_t index = 8 * sizeof(T) * j + tmp_v / 8;
+
+            res.first.data[i] += (table_1.first.data[index] >> (7 - tmp_v % 8) & 1) << j;
+            res.second.data[i] += (table_1.second.data[index] >> (7 - tmp_v % 8) & 1) << j;
+        }
+    }
+
+    if(d_size != 1)
+    {
+        RSSTensor<uint8_t> table_2 = parameter.equal_param.table_2;
+        uint8_t r_21 = parameter.equal_param.r_21;
+        uint8_t r_22 = parameter.equal_param.r_22;
+
+        RSSTensor<uint8_t> v_hat(x.shape);
+        Tensor<uint8_t> v_hat_res(x.shape);
+
+        if(party.party_id == 0)
+        {
+            uint8_t mask = ((1 << d_size) - 1) ^ r_21;
+
+#pragma omp parallel for
+            for (int i = 0; i < size; i++)
+            {
+                v_hat.first.data[i] = res.first.data[i] ^ mask;
+                v_hat.second.data[i] = res.second.data[i] ^ r_22;
+            }
+        }
+        else if(party.party_id == 1)
+        {
+#pragma omp parallel for
+            for (int i = 0; i < size; i++)
+            {
+                v_hat.first.data[i] = res.first.data[i] ^ r_21;
+                v_hat.second.data[i] = res.second.data[i] ^ r_22;
+            }    
+        }
+        else
+        {
+            uint8_t mask = ((1 << d_size) - 1) ^ r_22;
+
+#pragma omp parallel for
+            for (int i = 0; i < size; i++)
+            {
+                v_hat.first.data[i] = res.first.data[i] ^ r_21;
+                v_hat.second.data[i] = res.second.data[i] ^ mask;
+            }
+        }
+        restore_bit(v_hat, v_hat_res);
+
+        if(party.party_id == 0)
+        {
+            T val = table_2.second.data[0] >> 7 & 1;
+#pragma omp parallel for
+            for (int i = 0; i < size; i++)
+            {
+                int index = v_hat_res.data[i] / 8;
+                res.first.data[i] = table_2.first.data[index] >> (7 - v_hat_res.data[i] % 8) & 1;
+                res.second.data[i] = val;
+            }
+        }
+        else if(party.party_id == 1)
+        {
+            T val_1 = table_2.first.data[0] >> 7 & 1;
+            T val_2 = table_2.second.data[0] >> 7 & 1;
+#pragma omp parallel for
+            for (int i = 0; i < size; i++)
+            {
+                res.first.data[i] = val_1;
+                res.second.data[i] = val_2;
+            }  
+        }
+        else
+        {
+            T val = table_2.first.data[0] >> 7 & 1;
+#pragma omp parallel for
+            for (int i = 0; i < size; i++)
+            {
+                int index = v_hat_res.data[i] / 8;
+                res.first.data[i] = val;
+                res.second.data[i] = table_2.second.data[index] >> (7 - v_hat_res.data[i] % 8) & 1;
+            }
+        }
+    }
+}
+
+template <typename T>
+void rss_protocols::table_Equal(RSSTensor<T> &x, RSSTensor<T> &y, RSSTensor<T> &res, Parameters<T> &parameter, bool isFloat, bool malicious)
+{
+    Party3PC &party = Party3PC::getInstance();
+    T r_11 = parameter.equal_param.r_11;
+    T r_12 = parameter.equal_param.r_12;
+
+    // 盲化输入
+    RSSTensor<T> tmp(x.shape);
+#pragma omp parallel for
+    for (int i = 0; i < x.size(); i++)
+    {
+        tmp.first.data[i] = x.first.data[i] - y.first.data[i] + r_11;
+        tmp.second.data[i] = x.second.data[i] - y.second.data[i] + r_12;
+    }
+
+    Tensor<T> tmp_res(x.shape);
+    restore(tmp, tmp_res);
+
+    // 等于判断
+    equal_judge(tmp_res, res, parameter);
+    
+    // // b2a
+    // Tensor<T> res_with_pre(res.shape);
+    // Tensor<T> res_with_next(res.shape);
+
+    // party.send_tensor_to(party.next_party_id, res.first);
+    // party.recv_tensor_from(party.pre_party_id, res_with_pre);
+
+    // if (party.party_id == 2)
+    // {
+    //     ass_protocols::b2a(res_with_next, *party.peer_with_next, 1);
+    //     ass_protocols::b2a(res_with_pre, *party.peer_with_pre, 0);
+    // }
+    // else
+    // {
+    //     ass_protocols::b2a(res_with_pre, *party.peer_with_pre, 0);
+    //     ass_protocols::b2a(res_with_next, *party.peer_with_next, 1);
+    // }
+    if (isFloat)
+        mulConst(res, (T)1 << kFloat_Precision<T>, res);
 }
 
 template <typename T>
