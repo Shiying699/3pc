@@ -88,33 +88,37 @@ public:
     }
 };
 
-// template <typename T>
-// class GREATER_EQUAL_Param
-// {
-// public:
-//     ASSTensor<uint8_t> table_1;
-//     ASSTensor<uint8_t> table_2;
-//     uint32_t t1_size;
-//     uint32_t t2_size;
+template <typename T>
+class GREATER_EQUAL_Param
+{
+public:
+    RSSTensor<uint8_t> table_1;
+    RSSTensor<uint8_t> table_2;
+    uint32_t t1_size;
+    uint32_t t2_size;
 
-//     T r_1;
-//     uint8_t r_2;
-//     T r;
-//     uint8_t msb_2_l_r;
+    T r_11;
+    T r_12;
+    uint8_t r_21;
+    uint8_t r_22;
+    T r_1; // r的分享值
+    T r_2;
+    uint8_t msb_2_l_r_1;
+    uint8_t msb_2_l_r_2;
 
-//     void init(uint32_t t1_size, uint32_t t2_size)
-//     {
-//         this->t1_size = t1_size;
-//         this->t2_size = t2_size;
-//         table_1.allocate({t1_size});
-//         table_2.allocate({t2_size});
+    void init(uint32_t t1_size, uint32_t t2_size)
+    {
+        this->t1_size = t1_size;
+        this->t2_size = t2_size;
+        table_1.allocate({t1_size});
+        table_2.allocate({t2_size});
 
-//         r_1 = 0;
-//         r_2 = 0;
-//         r = 0;
-//         msb_2_l_r = 0;
-//     }
-// };
+    r_11 = r_12 = 0;
+    r_21 = r_22 = 0;
+    r_1 = r_2 = 0;
+    msb_2_l_r_1 = msb_2_l_r_2 = 0;
+    }
+};
 
 
 template <typename T>
@@ -129,7 +133,7 @@ public:
     LUT_Param<T> rsqrt_param;
     LUT_Param<T> gelu_param;
     EQUAL_Param<T> equal_param;
-    // GREATER_EQUAL_Param<T> greater_param;
+    GREATER_EQUAL_Param<T> greater_param;
     int party_id;
 
     static constexpr auto scale_bit = []
@@ -287,44 +291,64 @@ public:
         }
     }
 
-    // void init_greater_equal()
-    // {
-    //     if(sizeof(T) < 3){
-    //         greater_param.init((uint32_t)(32 * sizeof(T)), (uint32_t)1);
-    //     }
-    //     else{
-    //         greater_param.init((uint32_t)(32 * sizeof(T)), (uint32_t)(1 << (sizeof(T) - 3)));
-    //     }
+    void init_greater_equal()
+    {
+        if (sizeof(T) < 3){
+            greater_param.init((uint32_t)(32 * sizeof(T)), (uint32_t)1);
+        }
+        else {
+            greater_param.init((uint32_t)(32 * sizeof(T)), (uint32_t)(1 << (sizeof(T) - 3)));
+        }
         
-    //     greater_param.r_1 = 3 * (1 - party_id); // r = 3;
-    //     greater_param.r = greater_param.r_1 + (1 - party_id);
+        if (party_id == 0)
+        {
+            greater_param.r_11 = 3; // r = 3;
+            greater_param.r_1 = greater_param.r_11 + 1;
+            greater_param.msb_2_l_r_1 = (- greater_param.r_1) >> 8 * sizeof(T) - 1 & 1;
+        }
+        else if (party_id == 2)
+        {
+            greater_param.r_12 = 3;
+            greater_param.r_2 = greater_param.r_12 + 1;
+            greater_param.msb_2_l_r_2 = (- greater_param.r_2) >> 8 * sizeof(T) - 1 & 1;            
+        }
 
-    //     if(party_id == 0)
-    //     {
-    //         greater_param.msb_2_l_r = (- greater_param.r) >> 8 * sizeof(T) - 1 & 1;
-    //     }
-    //     else
-    //     {
-    //         greater_param.msb_2_l_r = 0;
-    //     }
+        greater_param.table_1.zeros();
+        greater_param.table_2.zeros();
 
-    //     greater_param.table_1.zeros();
-    //     greater_param.table_2.zeros();
+        if (party_id == 0)
+        {
+            for (int i = 0; i < sizeof(T); i++)
+            {
+                if(i == 0)
+                {
+                    greater_param.table_1.first.data[32*i] = 16; 
+                }
+                else
+                {
+                    greater_param.table_1.first.data[32*i] = 128;
+                }
+            }
 
-    //     for (int i = 0; i < sizeof(T); i++)
-    //     {
-    //         if(i == 0)
-    //         {
-    //             greater_param.table_1.value.data[32*i] = 16 * (1 - party_id); 
-    //         }
-    //         else
-    //         {
-    //             greater_param.table_1.value.data[32*i] = 128 * (1 - party_id);
-    //         }
-    //     }
+            greater_param.table_2.first.data[0] = 128;            
+        }
+        if (party_id == 2)
+        {
+            for (int i = 0; i < sizeof(T); i++)
+            {
+                if(i == 0)
+                {
+                    greater_param.table_1.second.data[32*i] = 16; 
+                }
+                else
+                {
+                    greater_param.table_1.second.data[32*i] = 128;
+                }
+            }
 
-    //     greater_param.table_2.value.data[0] = 128 * (1 - party_id);
-    // }
+            greater_param.table_2.second.data[0] = 128;            
+        }
+    }
 
     void init_all()
     {
@@ -335,6 +359,7 @@ public:
         init_rsqrt();
         init_gelu();
         init_equal();
+        init_greater_equal();
     }
 };
 

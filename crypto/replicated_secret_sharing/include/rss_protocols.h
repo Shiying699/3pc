@@ -175,6 +175,9 @@ namespace rss_protocols
     void table_Equal(RSSTensor<T> &x, RSSTensor<T> &y, RSSTensor<T> &res, Parameters<T> &parameter, bool isFloat = true, bool malicious = false);
 
     template <typename T>
+    void greater_judge(Tensor<T> &x, RSSTensor<T> &res, Parameters<T> &parameter);
+
+    template <typename T>
     void table_greaterEqual(RSSTensor<T> &x, RSSTensor<T> &y, RSSTensor<T> &res, Parameters<T> &parameter, bool isFloat = true, bool malicious = false);
 
     template <typename T>
@@ -1854,6 +1857,272 @@ void rss_protocols::table_Equal(RSSTensor<T> &x, RSSTensor<T> &y, RSSTensor<T> &
     if (isFloat)
         mulConst(res, (T)1 << kFloat_Precision<T>, res);
 }
+
+template <typename T>
+void rss_protocols::greater_judge(Tensor<T> &x, RSSTensor<T> &res, Parameters<T> &parameter)
+{
+    Party3PC &party = Party3PC::getInstance();
+
+    uint32_t size = x.size(); // 元素个数
+    uint8_t d_size = sizeof(T); // data_size
+
+    RSSTensor<uint8_t> table_1 = parameter.greater_param.table_1;
+    RSSTensor<uint8_t> table_2 = parameter.greater_param.table_2;
+
+    std::vector<uint32_t> bc_shape = {size, sizeof(T)};
+    RSSTensor<uint8_t> b(bc_shape), c(bc_shape);
+    b.zeros();
+
+    // 生成b和c
+#pragma omp parallel for
+    for (int i = 0; i < size; i++)
+    {
+        T base = i*d_size;
+        for (int j = 0; j < d_size; j++)
+        {
+            uint8_t tmp_v = (x.data[i] >> (8 * j)) & 0xFF;
+            T index = 8 * sizeof(T) * j + tmp_v / 8;
+            T j_index = base + j; 
+
+            c.first.data[j_index] = (table_1.first.data[index] >> (7 - tmp_v % 8) & 1); // 判断相等
+            c.second.data[j_index] = (table_1.second.data[index] >> (7 - tmp_v % 8) & 1);
+            
+            b.first.data[j_index] = table_1.first.data[32 * j];
+            b.second.data[j_index] = table_1.second.data[32 * j];
+            for (int k = 32 * j + 1; k < index; k++)
+            {
+                b.first.data[j_index] ^= table_1.first.data[k];
+                b.second.data[j_index] ^= table_1.first.data[k];
+                // 0-(index-1)并行化计算异或值，index循环计算异或值    
+            }
+            b.first.data[j_index] = __builtin_parity(b.first.data[j_index]);
+            b.second.data[j_index] = __builtin_parity(b.second.data[j_index]);
+
+            for (int k = 0; k < tmp_v % 8; k++)
+            {
+                b.first.data[j_index] ^= (table_1.first.data[index] >> (7 - k) & 1);
+                b.second.data[j_index] ^= (table_1.second.data[index] >> (7 - k) & 1);
+            }
+        }   
+    }
+
+    uint8_t r_21 = parameter.greater_param.r_21;
+    uint8_t r_22 = parameter.greater_param.r_22;
+    std::vector<uint32_t> v_shape = {size, d_size};
+    RSSTensor<uint8_t> v(v_shape);
+
+    if(party.party_id == 0)
+    {
+#pragma omp parallel for
+        for (int i = 0; i < size; i++)
+        {
+            T base = i * d_size;
+            for (int j = 0; j < d_size; j++)
+            {
+                T j_index = base + j;
+                v.first.data[j_index] = b.first.data[j_index];
+                v.second.data[j_index] = b.second.data[j_index];
+
+                for (int k = j + 1; k < d_size; k++)
+                {
+                    v.first.data[j_index] += c.first.data[base + k] << (k - j);
+                    v.second.data[j_index] += c.second.data[base + k] << (k - j);
+                }
+                    
+                v.first.data[j_index] = v.first.data[j_index] ^ ((1 << d_size-j) - 1) ^ r_21;
+                v.second.data[j_index] = v.second.data[j_index] ^ r_22;
+            } 
+        }
+    }
+    else if (party.party_id == 1)
+    {
+#pragma omp parallel for
+        for (int i = 0; i < size; i++)
+        {
+            T base = i * d_size;
+            for (int j = 0; j < d_size; j++)
+            {
+                T j_index = base + j;
+                v.first.data[j_index] = b.first.data[j_index];
+                v.second.data[j_index] = b.second.data[j_index];
+
+                for (int k = j + 1; k < d_size; k++)
+                {
+                    v.first.data[j_index] += c.first.data[base + k] << (k - j);
+                    v.second.data[j_index] += c.second.data[base + k] << (k - j);
+                }
+                    
+                v.first.data[j_index] = v.first.data[j_index] ^ r_21;
+                v.second.data[j_index] = v.second.data[j_index] ^ r_22;
+            } 
+        }
+    }
+    else
+    {
+#pragma omp parallel for
+        for (int i = 0; i < size; i++)
+        {
+            T base = i * d_size;
+            for (int j = 0; j < d_size; j++)
+            {
+                T j_index = base + j;
+                v.first.data[j_index] = b.first.data[j_index];
+                v.second.data[j_index] = b.second.data[j_index];
+
+                for (int k = j + 1; k < d_size; k++)
+                {
+                    v.first.data[j_index] += c.first.data[base + k] << (k - j);
+                    v.second.data[j_index] += c.second.data[base + k] << (k - j);
+                }
+                    
+                v.first.data[j_index] = v.first.data[j_index] ^ r_21;
+                v.second.data[j_index] = v.second.data[j_index]  ^ ((1 << d_size-j) - 1) ^ r_22;
+            } 
+        }
+    }
+
+    Tensor<uint8_t> v_hat({size, (uint32_t)d_size});
+    restore_bit(v, v_hat);
+
+    if (party.party_id == 0)
+    {
+#pragma omp parallel for
+        for (int i = 0; i < size; i++)
+        {
+            T base = i * d_size;
+            uint8_t val = table_2.second.data[0] >> 7 & 1;
+            for (int j = 0; j < d_size; j++)
+            {
+                int index = v_hat.data[base + j] / 8, j_index = base + j;
+                v.first.data[j_index] = table_2.first.data[index] >> (7 - v_hat.data[j_index] % 8) & 1;
+                v.second.data[j_index] = val;
+            }
+        }
+    }
+    else if (party.party_id == 1)
+    {
+        uint8_t val_1 = table_2.first.data[0] >> 7 & 1;
+        uint8_t val_2 = table_2.second.data[0] >> 7 & 1;
+        for (int i = 0; i < size; i++)
+        {
+            v.first.data[i] = val_1;
+            v.second.data[i] = val_2;
+        }
+    }
+    else 
+    {
+#pragma omp parallel for
+        for (int i = 0; i < size; i++)
+        {
+            T base = i * d_size;
+            uint8_t val = table_2.first.data[0] >> 7 & 1;
+            for (int j = 0; j < d_size; j++)
+            {
+                int index = v_hat.data[base + j] / 8, j_index = base + j;
+                v.first.data[j_index] = val;
+                v.second.data[j_index] = table_2.second.data[index] >> (7 - v_hat.data[j_index] % 8) & 1;
+            }
+        }
+    }
+
+#pragma omp parallel for
+    for (int i = 0; i < size; i++)
+    {
+        res.first.data[i] = 0;
+        res.second.data[i] = 0;
+        T base = i * d_size;
+        for (int j = 0; j < d_size; j++)
+        {
+            res.first.data[i] ^= v.first.data[base + j];
+            res.second.data[i] ^= v.second.data[base + j];
+        }
+    }
+}
+
+template <typename T>
+void rss_protocols::table_greaterEqual(RSSTensor<T> &x, RSSTensor<T> &y, RSSTensor<T> &res, Parameters<T> &parameter, bool isFloat, bool malicious)
+{
+    Party3PC &party = Party3PC::getInstance();
+    uint32_t size = x.size();
+    uint8_t llength = 8 * sizeof(T) - 1;
+    
+    T r_11 = parameter.greater_param.r_11;
+    T r_12 = parameter.greater_param.r_12;
+    T r_1 = parameter.greater_param.r_1;
+    T r_2 = parameter.greater_param.r_2;
+    uint8_t msb_2_l_r_1 = parameter.greater_param.msb_2_l_r_1;
+    uint8_t msb_2_l_r_2 = parameter.greater_param.msb_2_l_r_2;
+
+    RSSTensor<T> x_hat(x.shape);
+#pragma omp parallel for
+    for (int i = 0; i < size; i++)
+    {
+        x_hat.first.data[i] = x.first.data[i] - y.first.data[i] + r_1;
+        x_hat.second.data[i] = x.second.data[i] - y.second.data[i] + r_2;
+    }
+    
+    Tensor<T> x_hat_res(x.shape), y_0(x.shape);
+    restore(x_hat, x_hat_res);
+
+    T mask = 1 << llength;
+#pragma omp parallel for
+    for (int i = 0; i < size; i++)
+    {
+        y_0.data[i] = x_hat_res.data[i] % mask;
+    }
+
+    RSSTensor<T> greater_res(x.shape);
+    greater_judge(y_0, greater_res, parameter);
+
+    if (party.party_id == 0)
+    {
+#pragma omp parallel for
+        for (int i = 0; i < size; i++)
+        {
+            res.first.data[i] = (x_hat_res.data[i] >> llength & 1) ^ msb_2_l_r_1 ^ greater_res.first.data[i];
+            res.second.data[i] =  msb_2_l_r_2 ^ greater_res.second.data[i];
+        }
+    }
+    else if (party.party_id == 1)
+    {
+#pragma omp parallel for
+        for (int i = 0; i < size; i++)
+        {
+            res.first.data[i] =  msb_2_l_r_1 ^ greater_res.first.data[i];
+            res.second.data[i] =  msb_2_l_r_2 ^ greater_res.second.data[i];
+        }
+    }
+    else 
+    {
+#pragma omp parallel for
+        for (int i = 0; i < size; i++)
+        {
+            res.first.data[i] = msb_2_l_r_1 ^ greater_res.first.data[i];
+            res.second.data[i] = (x_hat_res.data[i] >> llength & 1) ^ msb_2_l_r_2 ^ greater_res.second.data[i];
+        }
+    }
+
+    // // b2a
+    // Tensor<T> res_with_pre(res.shape);
+    // Tensor<T> res_with_next(res.shape);
+
+    // party.send_tensor_to(party.next_party_id, res.first);
+    // party.recv_tensor_from(party.pre_party_id, res_with_pre);
+
+    // if (party.party_id == 2)
+    // {
+    //     ass_protocols::b2a(res_with_next, *party.peer_with_next, 1);
+    //     ass_protocols::b2a(res_with_pre, *party.peer_with_pre, 0);
+    // }
+    // else
+    // {
+    //     ass_protocols::b2a(res_with_pre, *party.peer_with_pre, 0);
+    //     ass_protocols::b2a(res_with_next, *party.peer_with_next, 1);
+    // }
+
+    if(isFloat)
+        mulConst(res, (T)1 << kFloat_Precision<T>, res);
+} 
 
 template <typename T>
 void rss_protocols::select(RSSTensor<T> &x, RSSTensor<T> &y, RSSTensor<T> &res, Parameters<T> &parameter, bool malicious)
