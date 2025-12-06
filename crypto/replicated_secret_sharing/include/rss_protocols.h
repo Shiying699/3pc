@@ -169,16 +169,21 @@ namespace rss_protocols
     void greaterEqual(RSSTensor<T> &x, RSSTensor<T> &y, RSSTensor<T> &res, Parameters<T> &parameter, bool isFloat = true, bool malicious = false);
 
     template <typename T>
-    void equal_judge(Tensor<T> &x, RSSTensor<T> &res, Parameters<T> &parameter);
+    void b2a(RSSTensor<T> &x, RSSTensor<T> &res, bool malicious = false);
 
     template <typename T>
-    void table_Equal(RSSTensor<T> &x, RSSTensor<T> &y, RSSTensor<T> &res, Parameters<T> &parameter, bool isFloat = true, bool malicious = false);
+    void equal_judge(Tensor<T> &x, RSSTensor<T> &res, Parameters<T> &parameter, bool malicious = false);
 
     template <typename T>
-    void greater_judge(Tensor<T> &x, RSSTensor<T> &res, Parameters<T> &parameter);
+    void table_Equal(RSSTensor<T> &x, RSSTensor<T> &y, RSSTensor<T> &res, Parameters<T> &parameter, 
+                     bool is_b2a, bool isFloat = true, bool malicious = false);
 
     template <typename T>
-    void table_greaterEqual(RSSTensor<T> &x, RSSTensor<T> &y, RSSTensor<T> &res, Parameters<T> &parameter, bool isFloat = true, bool malicious = false);
+    void greater_judge(Tensor<T> &x, RSSTensor<T> &res, Parameters<T> &parameter, bool malicious = false);
+
+    template <typename T>
+    void table_greaterEqual(RSSTensor<T> &x, RSSTensor<T> &y, RSSTensor<T> &res, Parameters<T> &parameter, 
+                            bool is_b2a, bool isFloat = true, bool malicious = false);
 
     template <typename T>
     void select(RSSTensor<T> &x, RSSTensor<T> &y, RSSTensor<T> &res, Parameters<T> &parameter, bool malicious = false);
@@ -1542,168 +1547,11 @@ template <typename T>
 void rss_protocols::pc_msb(RSSTensor<T> &x, Tensor<T> &res_with_pre, Tensor<T> &res_with_next,
                            Parameters<T> &parameter, const uint32_t size, bool malicious)
 {
-    Party3PC &party = Party3PC::getInstance();
-    RSSTensor<T> delta0(x.shape), delta1(x.shape), delta2(x.shape);
-    Tensor<T> dt_with_pre(x.shape), dt_with_next(x.shape);
-
-    if (party.party_id == 0)
-    {
-#pragma omp parallel for
-        for (int i = 0; i < size; i++)
-        {
-            delta0.first.data[i] = parameter.pc_cmp.self_r1 + x.first.data[i];
-            delta0.second.data[i] = parameter.pc_cmp.self_r0 + x.second.data[i];
-
-            delta1.first.data[i] = x.first.data[i];
-            delta1.second.data[i] = parameter.pc_cmp.r_with_pre + x.second.data[i];
-
-            delta2.first.data[i] = parameter.pc_cmp.r_with_next + x.first.data[i];
-            delta2.second.data[i] = x.second.data[i];
-        }
-    }
-    else if (party.party_id == 1)
-    {
-#pragma omp parallel for
-        for (int i = 0; i < size; i++)
-        {
-            delta0.first.data[i] = parameter.pc_cmp.r_with_next + x.first.data[i];
-            delta0.second.data[i] = x.second.data[i];
-
-            delta1.first.data[i] = parameter.pc_cmp.self_r1 + x.first.data[i];
-            delta1.second.data[i] = parameter.pc_cmp.self_r0 + x.second.data[i];
-
-            delta2.first.data[i] = x.first.data[i];
-            delta2.second.data[i] = parameter.pc_cmp.r_with_pre + x.second.data[i];
-        }
-    }
-    else if (party.party_id == 2)
-    {
-#pragma omp parallel for
-        for (int i = 0; i < size; i++)
-        {
-            delta0.first.data[i] = x.first.data[i];
-            delta0.second.data[i] = parameter.pc_cmp.r_with_pre + x.second.data[i];
-
-            delta1.first.data[i] = parameter.pc_cmp.r_with_next + x.first.data[i];
-            delta1.second.data[i] = x.second.data[i];
-
-            delta2.first.data[i] = parameter.pc_cmp.self_r1 + x.first.data[i];
-            delta2.second.data[i] = parameter.pc_cmp.self_r0 + x.second.data[i];
-        }
-    }
-
-    reconstruct_to(0, delta1, dt_with_pre, malicious);
-    reconstruct_to(0, delta2, dt_with_next, malicious);
-
-    reconstruct_to(1, delta2, dt_with_pre, malicious);
-    reconstruct_to(1, delta0, dt_with_next, malicious);
-
-    reconstruct_to(2, delta0, dt_with_pre, malicious);
-    reconstruct_to(2, delta1, dt_with_next, malicious);
-
-    int bit_len_sub_1 = sizeof(T) * 8 - 1;
-    utils::privateCompare(dt_with_pre, dt_with_next, res_with_pre, res_with_next, parameter);
-
-    for (int i = 0; i < size; i++)
-    {
-        res_with_pre.data[i] = (res_with_pre.data[i] + parameter.pc_cmp.r_with_pre_bits.data[0]) % 2;
-        res_with_next.data[i] = (res_with_next.data[i] + parameter.pc_cmp.r_with_next_bits.data[0] + ((dt_with_next.data[i] >> bit_len_sub_1) & 1)) % 2;
-    }
-
-    if (party.party_id == 2)
-    {
-        ass_protocols::b2a(res_with_next, *party.peer_with_next, 1);
-        ass_protocols::b2a(res_with_pre, *party.peer_with_pre, 0);
-    }
-    else
-    {
-        ass_protocols::b2a(res_with_pre, *party.peer_with_pre, 0);
-        ass_protocols::b2a(res_with_next, *party.peer_with_next, 1);
-    }
 }
 
 template <typename T>
 void rss_protocols::nonNegative(RSSTensor<T> &x, RSSTensor<T> &res, Parameters<T> &parameter, bool isFloat, bool malicious)
 {
-    Party3PC &party = Party3PC::getInstance();
-    uint32_t size = x.size();
-    Tensor<T> res_with_pre(x.shape), res_with_next(x.shape);
-    Tensor<T> mac_res_with_pre(x.shape), mac_res_with_next(x.shape);
-
-    pc_msb(x, res_with_pre, res_with_next, parameter, size, malicious);
-
-    if (malicious)
-    {
-        std::pair<T, T> one_share, mac_one_share;
-        mac_one_share = std::make_pair(0, 0);
-        if (party.party_id == 0)
-        {
-            one_share = std::make_pair(1, 0);
-        }
-        else if (party.party_id == 1)
-        {
-            one_share = std::make_pair(0, 0);
-        }
-        else
-        {
-            one_share = std::make_pair(0, 1);
-        }
-
-        Tensor<T> res_33(res.shape);
-        Tensor<T> mac_res_33(res.shape);
-
-#pragma omp parallel for
-        for (int i = 0; i < size; i++)
-        {
-            res_33.data[i] = one_share.first * (0 - res_with_pre.data[i]) + one_share.second * (1 - res_with_next.data[i]);
-            mac_res_33.data[i] = mac_one_share.first * (0 - res_with_pre.data[i]) + mac_one_share.second * (1 - res_with_next.data[i]);
-        }
-
-        reshare(res_33, res);
-
-        RSSTensor<T> mac_res(res.shape);
-        reshare(mac_res_33, mac_res);
-
-        // mac check
-#if (LATER_CHECK)
-        // party.mac_buffer.add_value(res, mac_res, mac_key);
-        MAC_SIZE += res.size();
-#else
-        std::pair<T, T> mac_key = std::make_pair(0, 0);
-        macCheck(res, mac_res, mac_key);
-#endif
-    }
-    else
-    {
-        std::pair<T, T> one_share;
-        if (party.party_id == 0)
-        {
-            one_share = std::make_pair(1, 0);
-        }
-        else if (party.party_id == 1)
-        {
-            one_share = std::make_pair(0, 0);
-        }
-        else
-        {
-            one_share = std::make_pair(0, 1);
-        }
-
-        Tensor<T> res_33(res.shape);
-
-#pragma omp parallel for
-        for (int i = 0; i < size; i++)
-        {
-            res_33.data[i] = one_share.first * (0 - res_with_pre.data[i]) + one_share.second * (1 - res_with_next.data[i]);
-        }
-
-        reshare(res_33, res);
-    }
-
-    if (isFloat)
-    {
-        mulConst(res, (T)(1 << x.float_scale_bit), res);
-    }
 }
 
 template <typename T>
@@ -1715,7 +1563,50 @@ void rss_protocols::greaterEqual(RSSTensor<T> &x, RSSTensor<T> &y, RSSTensor<T> 
 }
 
 template <typename T>
-void rss_protocols::equal_judge(Tensor<T> &x, RSSTensor<T> &res, Parameters<T> &parameter)
+void rss_protocols::b2a(RSSTensor<T> &x, RSSTensor<T> &res, bool malicious)
+{
+    Party3PC &party = Party3PC::getInstance();
+    uint32_t size = x.size();
+    RSSTensor<T> r(x.shape), a(x.shape);
+    r.zeros();
+
+    for (int i = 0; i < size; i++)
+    {
+        a.first.data[i] = x.first.data[i] ^ r.first.data[i];
+        a.second.data[i] = x.second.data[i] ^ r.second.data[i];
+    }
+
+    Tensor<T> a_res(x.shape);
+    restore_bit(a, a_res, malicious);
+
+    if(party.party_id == 0)
+    {
+        for (int i = 0; i < size; i++)
+        {
+            res.first.data[i] = a_res.data[i] + r.first.data[i] - 2 * a_res.data[i] * r.first.data[i];
+            res.second.data[i] = r.second.data[i] - 2 * a_res.data[i] * r.second.data[i];
+        }  
+    }  
+    else if(party.party_id == 1)
+    {
+        for (int i = 0; i < size; i++)
+        {
+            res.first.data[i] = r.first.data[i] - 2 * a_res.data[i] * r.first.data[i];
+            res.second.data[i] = r.second.data[i] - 2 * a_res.data[i] * r.second.data[i];
+        }  
+    }
+    else
+    {
+        for (int i = 0; i < size; i++)
+        {
+            res.first.data[i] = r.first.data[i] - 2 * a_res.data[i] * r.first.data[i];
+            res.second.data[i] = a_res.data[i] + r.second.data[i] - 2 * a_res.data[i] * r.second.data[i];
+        }  
+    }
+}
+
+template <typename T>
+void rss_protocols::equal_judge(Tensor<T> &x, RSSTensor<T> &res, Parameters<T> &parameter, bool malicious)
 {
     Party3PC &party = Party3PC::getInstance();
     RSSTensor<uint8_t> table_1 = parameter.equal_param.table_1;
@@ -1777,46 +1668,21 @@ void rss_protocols::equal_judge(Tensor<T> &x, RSSTensor<T> &res, Parameters<T> &
                 v_hat.second.data[i] = res.second.data[i] ^ mask;
             }
         }
-        restore_bit(v_hat, v_hat_res);
-
-        if(party.party_id == 0)
-        {
-            T val = table_2.second.data[0] >> 7 & 1;
+        restore_bit(v_hat, v_hat_res, malicious);    
+            
 #pragma omp parallel for
-            for (int i = 0; i < size; i++)
-            {
-                int index = v_hat_res.data[i] / 8;
-                res.first.data[i] = table_2.first.data[index] >> (7 - v_hat_res.data[i] % 8) & 1;
-                res.second.data[i] = val;
-            }
-        }
-        else if(party.party_id == 1)
+        for (int i = 0; i < size; i++)
         {
-            T val_1 = table_2.first.data[0] >> 7 & 1;
-            T val_2 = table_2.second.data[0] >> 7 & 1;
-#pragma omp parallel for
-            for (int i = 0; i < size; i++)
-            {
-                res.first.data[i] = val_1;
-                res.second.data[i] = val_2;
-            }  
-        }
-        else
-        {
-            T val = table_2.first.data[0] >> 7 & 1;
-#pragma omp parallel for
-            for (int i = 0; i < size; i++)
-            {
-                int index = v_hat_res.data[i] / 8;
-                res.first.data[i] = val;
-                res.second.data[i] = table_2.second.data[index] >> (7 - v_hat_res.data[i] % 8) & 1;
-            }
-        }
+            int index = v_hat_res.data[i] / 8, delta = 7 - v_hat_res.data[i] % 8;
+            res.first.data[i] = table_2.first.data[index] >> delta & 1;
+            res.second.data[i] = table_2.second.data[index] >> delta & 1;
+        }   
     }
 }
 
 template <typename T>
-void rss_protocols::table_Equal(RSSTensor<T> &x, RSSTensor<T> &y, RSSTensor<T> &res, Parameters<T> &parameter, bool isFloat, bool malicious)
+void rss_protocols::table_Equal(RSSTensor<T> &x, RSSTensor<T> &y, RSSTensor<T> &res, 
+                                Parameters<T> &parameter, bool is_b2a, bool isFloat, bool malicious)
 {
     Party3PC &party = Party3PC::getInstance();
     T r_11 = parameter.equal_param.r_11;
@@ -1837,29 +1703,20 @@ void rss_protocols::table_Equal(RSSTensor<T> &x, RSSTensor<T> &y, RSSTensor<T> &
     // 等于判断
     equal_judge(tmp_res, res, parameter);
     
-    // // b2a
-    // Tensor<T> res_with_pre(res.shape);
-    // Tensor<T> res_with_next(res.shape);
+    std::cout << res.first.data[1] << std::endl;
 
-    // party.send_tensor_to(party.next_party_id, res.first);
-    // party.recv_tensor_from(party.pre_party_id, res_with_pre);
+    // b2a
+    if (is_b2a) 
+        b2a(res, res, malicious);
 
-    // if (party.party_id == 2)
-    // {
-    //     ass_protocols::b2a(res_with_next, *party.peer_with_next, 1);
-    //     ass_protocols::b2a(res_with_pre, *party.peer_with_pre, 0);
-    // }
-    // else
-    // {
-    //     ass_protocols::b2a(res_with_pre, *party.peer_with_pre, 0);
-    //     ass_protocols::b2a(res_with_next, *party.peer_with_next, 1);
-    // }
+    std::cout << res.first.data[1] << std::endl;
+
     if (isFloat)
         mulConst(res, (T)1 << kFloat_Precision<T>, res);
 }
 
 template <typename T>
-void rss_protocols::greater_judge(Tensor<T> &x, RSSTensor<T> &res, Parameters<T> &parameter)
+void rss_protocols::greater_judge(Tensor<T> &x, RSSTensor<T> &res, Parameters<T> &parameter, bool malicious)
 {
     Party3PC &party = Party3PC::getInstance();
 
@@ -1982,46 +1839,19 @@ void rss_protocols::greater_judge(Tensor<T> &x, RSSTensor<T> &res, Parameters<T>
     }
 
     Tensor<uint8_t> v_hat({size, (uint32_t)d_size});
-    restore_bit(v, v_hat);
+    restore_bit(v, v_hat, malicious);
 
-    if (party.party_id == 0)
-    {
 #pragma omp parallel for
-        for (int i = 0; i < size; i++)
-        {
-            T base = i * d_size;
-            uint8_t val = table_2.second.data[0] >> 7 & 1;
-            for (int j = 0; j < d_size; j++)
-            {
-                int index = v_hat.data[base + j] / 8, j_index = base + j;
-                v.first.data[j_index] = table_2.first.data[index] >> (7 - v_hat.data[j_index] % 8) & 1;
-                v.second.data[j_index] = val;
-            }
-        }
-    }
-    else if (party.party_id == 1)
+    for (int i = 0; i < size; i++)
     {
-        uint8_t val_1 = table_2.first.data[0] >> 7 & 1;
-        uint8_t val_2 = table_2.second.data[0] >> 7 & 1;
-        for (int i = 0; i < size; i++)
+        T base = i * d_size;
+        uint8_t val = table_2.second.data[0] >> 7 & 1;
+        for (int j = 0; j < d_size; j++)
         {
-            v.first.data[i] = val_1;
-            v.second.data[i] = val_2;
-        }
-    }
-    else 
-    {
-#pragma omp parallel for
-        for (int i = 0; i < size; i++)
-        {
-            T base = i * d_size;
-            uint8_t val = table_2.first.data[0] >> 7 & 1;
-            for (int j = 0; j < d_size; j++)
-            {
-                int index = v_hat.data[base + j] / 8, j_index = base + j;
-                v.first.data[j_index] = val;
-                v.second.data[j_index] = table_2.second.data[index] >> (7 - v_hat.data[j_index] % 8) & 1;
-            }
+            int j_index = base + j;
+            int index = v_hat.data[j_index] / 8, delta = 7 - v_hat.data[j_index] % 8;
+            v.first.data[j_index] = table_2.first.data[index] >> delta & 1;
+            v.second.data[j_index] = table_2.second.data[index] >> delta & 1;
         }
     }
 
@@ -2033,14 +1863,16 @@ void rss_protocols::greater_judge(Tensor<T> &x, RSSTensor<T> &res, Parameters<T>
         T base = i * d_size;
         for (int j = 0; j < d_size; j++)
         {
-            res.first.data[i] ^= v.first.data[base + j];
-            res.second.data[i] ^= v.second.data[base + j];
+            int j_index = base + j;
+            res.first.data[i] ^= v.first.data[j_index];
+            res.second.data[i] ^= v.second.data[j_index];
         }
     }
 }
 
 template <typename T>
-void rss_protocols::table_greaterEqual(RSSTensor<T> &x, RSSTensor<T> &y, RSSTensor<T> &res, Parameters<T> &parameter, bool isFloat, bool malicious)
+void rss_protocols::table_greaterEqual(RSSTensor<T> &x, RSSTensor<T> &y, RSSTensor<T> &res, 
+                                       Parameters<T> &parameter, bool is_b2a, bool isFloat, bool malicious)
 {
     Party3PC &party = Party3PC::getInstance();
     uint32_t size = x.size();
@@ -2102,23 +1934,14 @@ void rss_protocols::table_greaterEqual(RSSTensor<T> &x, RSSTensor<T> &y, RSSTens
         }
     }
 
-    // // b2a
-    // Tensor<T> res_with_pre(res.shape);
-    // Tensor<T> res_with_next(res.shape);
+    sub((T)1, res, res);
 
-    // party.send_tensor_to(party.next_party_id, res.first);
-    // party.recv_tensor_from(party.pre_party_id, res_with_pre);
+    std::cout << res.first.data[1] << std::endl;
+    // b2a
+    if (is_b2a) 
+        b2a(res, res, malicious);
 
-    // if (party.party_id == 2)
-    // {
-    //     ass_protocols::b2a(res_with_next, *party.peer_with_next, 1);
-    //     ass_protocols::b2a(res_with_pre, *party.peer_with_pre, 0);
-    // }
-    // else
-    // {
-    //     ass_protocols::b2a(res_with_pre, *party.peer_with_pre, 0);
-    //     ass_protocols::b2a(res_with_next, *party.peer_with_next, 1);
-    // }
+    std::cout << res.first.data[1] << std::endl;
 
     if(isFloat)
         mulConst(res, (T)1 << kFloat_Precision<T>, res);
@@ -2127,966 +1950,69 @@ void rss_protocols::table_greaterEqual(RSSTensor<T> &x, RSSTensor<T> &y, RSSTens
 template <typename T>
 void rss_protocols::select(RSSTensor<T> &x, RSSTensor<T> &y, RSSTensor<T> &res, Parameters<T> &parameter, bool malicious)
 {
-    uint32_t size = x.size();
-    Tensor<T> res_with_pre(x.shape), res_with_next(x.shape);
-
-    pc_msb(x, res_with_pre, res_with_next, parameter, size, malicious);
-
-    if (malicious)
-    {
-        std::pair<T, T> mac_key;
-        mac_key = std::make_pair(0, 0);
-        RSSTensor<T> mac_y(y.shape);
-        mul(y, mac_key, mac_y);
-
-        Tensor<T> res_33(res.shape);
-        Tensor<T> mac_res_33(res.shape);
-
-#pragma omp parallel for
-        for (int i = 0; i < size; i++)
-        {
-            res_33.data[i] = y.first.data[i] * (0 - res_with_pre.data[i]) + y.second.data[i] * (1 - res_with_next.data[i]);
-            mac_res_33.data[i] = mac_y.first.data[i] * (0 - res_with_pre.data[i]) + mac_y.second.data[i] * (1 - res_with_next.data[i]);
-        }
-
-        reshare(res_33, res);
-
-        RSSTensor<T> mac_res(res.shape);
-        reshare(mac_res_33, mac_res);
-
-        // mac check
-#if (LATER_CHECK)
-        // party.mac_buffer.add_value(res, mac_res, mac_key);
-        MAC_SIZE += res.size();
-#else
-        macCheck(res, mac_res, mac_key);
-#endif
-    }
-    else
-    {
-        Tensor<T> res_33(res.shape);
-
-#pragma omp parallel for
-        for (int i = 0; i < size; i++)
-        {
-            res_33.data[i] = y.first.data[i] * (0 - res_with_pre.data[i]) + y.second.data[i] * (1 - res_with_next.data[i]);
-        }
-
-        reshare(res_33, res);
-    }
 }
 
 template <typename T>
 void rss_protocols::select(RSSTensor<T> &x, RSSTensor<T> &y, RSSTensor<T> &res, uint32_t y_num, Parameters<T> &parameter, bool malicious)
 {
-    uint32_t size = x.size();
-    Tensor<T> res_with_pre(x.shape), res_with_next(x.shape);
-
-    pc_msb(x, res_with_pre, res_with_next, parameter, size, malicious);
-
-    if (malicious)
-    {
-        std::pair<T, T> mac_key;
-        mac_key = std::make_pair(0, 0);
-        RSSTensor<T> mac_y(y.shape);
-
-        Tensor<T> res_33(res.shape);
-        Tensor<T> mac_res_33(res.shape);
-
-        int index;
-        mul(y, mac_key, mac_y);
-        for (int i = 0; i < y_num; i++)
-        {
-#pragma omp parallel for
-            for (int j = 0; j < size; j++)
-            {
-                index = i * size + j;
-                res_33.data[index] = y.first.data[index] * (0 - res_with_pre.data[j]) + y.second.data[index] * (1 - res_with_next.data[j]);
-                mac_res_33.data[index] = mac_y.first.data[index] * (0 - res_with_pre.data[j]) + mac_y.second.data[index] * (1 - res_with_next.data[j]);
-            }
-        }
-
-        reshare(res_33, res);
-
-        RSSTensor<T> mac_res(res.shape);
-        reshare(mac_res_33, mac_res);
-
-        // mac check
-#if (LATER_CHECK)
-        // party.mac_buffer.add_value(res, mac_res, mac_key);
-        MAC_SIZE += res.size();
-#else
-        macCheck(res, mac_res, mac_key);
-#endif
-    }
-    else
-    {
-        Tensor<T> res_33(res.shape);
-        int index;
-        for (int i = 0; i < y_num; i++)
-        {
-#pragma omp parallel for
-            for (int j = 0; j < size; j++)
-            {
-                index = i * size + j;
-                res_33.data[index] = y.first.data[index] * (0 - res_with_pre.data[j]) + y.second.data[index] * (1 - res_with_next.data[j]);
-            }
-        }
-
-        reshare(res_33, res);
-    }
 }
 
 template <typename T>
 void rss_protocols::lut(RSSTensor<T> &x, RSSTensor<T> &res, LUT_Param<T> &parameter, bool malicious)
 {
-    Party3PC &party = Party3PC::getInstance();
-    uint32_t size = x.size(), table_size = parameter.table_size;
-    RSSTensor<T> delta0(x.shape), delta1(x.shape), delta2(x.shape);
-    Tensor<T> dt_with_pre(x.shape), dt_with_next(x.shape);
-
-    if (party.party_id == 0)
-    {
-#pragma omp parallel for
-        for (int i = 0; i < size; i++)
-        {
-            delta0.first.data[i] = parameter.self_r1 - x.first.data[i];
-            delta0.second.data[i] = parameter.self_r0 - x.second.data[i];
-
-            delta1.first.data[i] = 0 - x.first.data[i];
-            delta1.second.data[i] = parameter.r_with_pre - x.second.data[i];
-
-            delta2.first.data[i] = parameter.r_with_next - x.first.data[i];
-            delta2.second.data[i] = 0 - x.second.data[i];
-        }
-    }
-    else if (party.party_id == 1)
-    {
-#pragma omp parallel for
-        for (int i = 0; i < size; i++)
-        {
-            delta0.first.data[i] = parameter.r_with_next - x.first.data[i];
-            delta0.second.data[i] = 0 - x.second.data[i];
-
-            delta1.first.data[i] = parameter.self_r1 - x.first.data[i];
-            delta1.second.data[i] = parameter.self_r0 - x.second.data[i];
-
-            delta2.first.data[i] = 0 - x.first.data[i];
-            delta2.second.data[i] = parameter.r_with_pre - x.second.data[i];
-        }
-    }
-    else if (party.party_id == 2)
-    {
-#pragma omp parallel for
-        for (int i = 0; i < size; i++)
-        {
-            delta0.first.data[i] = 0 - x.first.data[i];
-            delta0.second.data[i] = parameter.r_with_pre - x.second.data[i];
-
-            delta1.first.data[i] = parameter.r_with_next - x.first.data[i];
-            delta1.second.data[i] = 0 - x.second.data[i];
-
-            delta2.first.data[i] = parameter.self_r1 - x.first.data[i];
-            delta2.second.data[i] = parameter.self_r0 - x.second.data[i];
-        }
-    }
-
-    reconstruct_to(0, delta1, dt_with_pre, malicious);
-    reconstruct_to(0, delta2, dt_with_next, malicious);
-
-    reconstruct_to(1, delta2, dt_with_pre, malicious);
-    reconstruct_to(1, delta0, dt_with_next, malicious);
-
-    reconstruct_to(2, delta0, dt_with_pre, malicious);
-    reconstruct_to(2, delta1, dt_with_next, malicious);
-
-    if (malicious)
-    {
-        std::pair<T, T> one_share, mac_one_share;
-        mac_one_share = std::make_pair(0, 0);
-        if (party.party_id == 0)
-        {
-            one_share = std::make_pair(1, 0);
-        }
-        else if (party.party_id == 1)
-        {
-            one_share = std::make_pair(0, 0);
-        }
-        else
-        {
-            one_share = std::make_pair(0, 1);
-        }
-
-        Tensor<T> res_33(res.shape);
-        Tensor<T> mac_res_33(res.shape);
-
-        uint32_t idx_pre;
-        uint32_t idx_next;
-
-        T res_with_pre, res_with_next;
-
-#pragma omp parallel for
-        for (int i = 0; i < size; i++)
-        {
-            res_with_pre = 0;
-            res_with_next = 0;
-            for (int j = 0; j < table_size; j++)
-            {
-                idx_pre = (j + dt_with_pre.data[i] + table_size) % table_size;
-                idx_next = (j + dt_with_next.data[i] + table_size) % table_size;
-
-                res_with_pre += parameter.onehot_table_with_pre.data[idx_pre] * parameter.table.data[j];
-                res_with_next += parameter.onehot_table_with_next.data[idx_pre] * parameter.table.data[j];
-            }
-            res_33.data[i] = one_share.first * res_with_pre + one_share.second * res_with_next;
-            mac_res_33.data[i] = mac_one_share.first * res_with_pre + mac_one_share.second * res_with_next;
-        }
-
-        reshare(res_33, res);
-
-        RSSTensor<T> mac_res(res.shape);
-        reshare(mac_res_33, mac_res);
-
-        // mac check
-#if (LATER_CHECK)
-        // party.mac_buffer.add_value(res, mac_res, mac_key);
-        MAC_SIZE += res.size();
-#else
-        std::pair<T, T> mac_key = std::make_pair(0, 0);
-        macCheck(res, mac_res, mac_key);
-#endif
-    }
-    else
-    {
-        std::pair<T, T> one_share;
-        if (party.party_id == 0)
-        {
-            one_share = std::make_pair(1, 0);
-        }
-        else if (party.party_id == 1)
-        {
-            one_share = std::make_pair(0, 0);
-        }
-        else
-        {
-            one_share = std::make_pair(0, 1);
-        }
-
-        Tensor<T> res_33(res.shape);
-
-        uint32_t idx_pre;
-        uint32_t idx_next;
-
-        T res_with_pre, res_with_next;
-
-#pragma omp parallel for
-        for (int i = 0; i < size; i++)
-        {
-            res_with_pre = 0;
-            res_with_next = 0;
-            for (int j = 0; j < table_size; j++)
-            {
-                idx_pre = (j + dt_with_pre.data[i] + table_size) % table_size;
-                idx_next = (j + dt_with_next.data[i] + table_size) % table_size;
-
-                res_with_pre += parameter.onehot_table_with_pre.data[idx_pre] * parameter.table.data[j];
-                res_with_next += parameter.onehot_table_with_next.data[idx_pre] * parameter.table.data[j];
-            }
-            res_33.data[i] = one_share.first * res_with_pre + one_share.second * res_with_next;
-        }
-
-        reshare(res_33, res);
-    }
 }
 
 template <typename T>
 void rss_protocols::lut(RSSTensor<T> &x, RSSTensor<T> &res1, RSSTensor<T> &res2, LUT_Param<T> &parameter1, LUT_Param<T> &parameter2, bool malicious)
 {
-    // TODO: extend to multi-table
-    Party3PC &party = Party3PC::getInstance();
-    uint32_t size = x.size(), double_size = 2 * size, table1_size = parameter1.table_size, table2_size = parameter2.table_size;
-    RSSTensor<T> delta0({double_size}), delta1({double_size}), delta2({double_size});
-    Tensor<T> dt_with_pre({double_size}), dt_with_next({double_size});
-
-    if (party.party_id == 0)
-    {
-#pragma omp parallel for
-        for (int i = 0; i < size; i++)
-        {
-            // 1
-            delta0.first.data[i] = parameter1.self_r1 - x.first.data[i];
-            delta0.second.data[i] = parameter1.self_r0 - x.second.data[i];
-
-            delta1.first.data[i] = 0 - x.first.data[i];
-            delta1.second.data[i] = parameter1.r_with_pre - x.second.data[i];
-
-            delta2.first.data[i] = parameter1.r_with_next - x.first.data[i];
-            delta2.second.data[i] = 0 - x.second.data[i];
-
-            // 2
-            delta0.first.data[i + size] = parameter2.self_r1 - x.first.data[i];
-            delta0.second.data[i + size] = parameter2.self_r0 - x.second.data[i];
-
-            delta1.first.data[i + size] = 0 - x.first.data[i];
-            delta1.second.data[i + size] = parameter2.r_with_pre - x.second.data[i];
-
-            delta2.first.data[i + size] = parameter2.r_with_next - x.first.data[i];
-            delta2.second.data[i + size] = 0 - x.second.data[i];
-        }
-    }
-    else if (party.party_id == 1)
-    {
-#pragma omp parallel for
-        for (int i = 0; i < size; i++)
-        {
-            // 1
-            delta0.first.data[i] = parameter1.r_with_next - x.first.data[i];
-            delta0.second.data[i] = 0 - x.second.data[i];
-
-            delta1.first.data[i] = parameter1.self_r1 - x.first.data[i];
-            delta1.second.data[i] = parameter1.self_r0 - x.second.data[i];
-
-            delta2.first.data[i] = 0 - x.first.data[i];
-            delta2.second.data[i] = parameter1.r_with_pre - x.second.data[i];
-
-            // 2
-            delta0.first.data[i + size] = parameter2.r_with_next - x.first.data[i];
-            delta0.second.data[i + size] = 0 - x.second.data[i];
-
-            delta1.first.data[i + size] = parameter2.self_r1 - x.first.data[i];
-            delta1.second.data[i + size] = parameter2.self_r0 - x.second.data[i];
-
-            delta2.first.data[i + size] = 0 - x.first.data[i];
-            delta2.second.data[i + size] = parameter2.r_with_pre - x.second.data[i];
-        }
-    }
-    else if (party.party_id == 2)
-    {
-#pragma omp parallel for
-        for (int i = 0; i < size; i++)
-        {
-            // 1
-            delta0.first.data[i] = 0 - x.first.data[i];
-            delta0.second.data[i] = parameter1.r_with_pre - x.second.data[i];
-
-            delta1.first.data[i] = parameter1.r_with_next - x.first.data[i];
-            delta1.second.data[i] = 0 - x.second.data[i];
-
-            delta2.first.data[i] = parameter1.self_r1 - x.first.data[i];
-            delta2.second.data[i] = parameter1.self_r0 - x.second.data[i];
-
-            // 2
-            delta0.first.data[i + size] = 0 - x.first.data[i];
-            delta0.second.data[i + size] = parameter2.r_with_pre - x.second.data[i];
-
-            delta1.first.data[i + size] = parameter2.r_with_next - x.first.data[i];
-            delta1.second.data[i + size] = 0 - x.second.data[i];
-
-            delta2.first.data[i + size] = parameter2.self_r1 - x.first.data[i];
-            delta2.second.data[i + size] = parameter2.self_r0 - x.second.data[i];
-        }
-    }
-
-    reconstruct_to(0, delta1, dt_with_pre, malicious);
-    reconstruct_to(0, delta2, dt_with_next, malicious);
-
-    reconstruct_to(1, delta2, dt_with_pre, malicious);
-    reconstruct_to(1, delta0, dt_with_next, malicious);
-
-    reconstruct_to(2, delta0, dt_with_pre, malicious);
-    reconstruct_to(2, delta1, dt_with_next, malicious);
-
-    if (malicious)
-    {
-        std::pair<T, T> one_share, mac_one_share;
-        mac_one_share = std::make_pair(0, 0);
-        if (party.party_id == 0)
-        {
-            one_share = std::make_pair(1, 0);
-        }
-        else if (party.party_id == 1)
-        {
-            one_share = std::make_pair(0, 0);
-        }
-        else
-        {
-            one_share = std::make_pair(0, 1);
-        }
-
-        Tensor<T> res_33({double_size});
-        Tensor<T> mac_res_33({double_size});
-
-        uint32_t idx_pre;
-        uint32_t idx_next;
-
-        T res_with_pre, res_with_next;
-
-#pragma omp parallel for
-        for (int i = 0; i < size; i++)
-        {
-            // 1
-            res_with_pre = 0;
-            res_with_next = 0;
-            for (int j = 0; j < table1_size; j++)
-            {
-                idx_pre = (j + dt_with_pre.data[i] + table1_size) % table1_size;
-                idx_next = (j + dt_with_next.data[i] + table1_size) % table1_size;
-
-                res_with_pre += parameter1.onehot_table_with_pre.data[idx_pre] * parameter1.table.data[j];
-                res_with_next += parameter1.onehot_table_with_next.data[idx_pre] * parameter1.table.data[j];
-            }
-            res_33.data[i] = one_share.first * res_with_pre + one_share.second * res_with_next;
-            mac_res_33.data[i] = mac_one_share.first * res_with_pre + mac_one_share.second * res_with_next;
-
-            // 2
-            res_with_pre = 0;
-            res_with_next = 0;
-            for (int j = 0; j < table2_size; j++)
-            {
-                idx_pre = (j + dt_with_pre.data[i + size] + table2_size) % table2_size;
-                idx_next = (j + dt_with_next.data[i + size] + table2_size) % table2_size;
-
-                res_with_pre += parameter2.onehot_table_with_pre.data[idx_pre] * parameter2.table.data[j];
-                res_with_next += parameter2.onehot_table_with_next.data[idx_pre] * parameter2.table.data[j];
-            }
-            res_33.data[i + size] = one_share.first * res_with_pre + one_share.second * res_with_next;
-            mac_res_33.data[i + size] = mac_one_share.first * res_with_pre + mac_one_share.second * res_with_next;
-        }
-
-        RSSTensor<T> res({double_size}), mac_res({double_size});
-        reshare(res_33, res);
-        reshare(mac_res_33, mac_res);
-
-        for (int i = 0; i < size; i++)
-        {
-            res1.first.data[i] = res.first.data[i];
-            res1.second.data[i] = res.second.data[i];
-
-            res2.first.data[i] = res.first.data[i + size];
-            res2.second.data[i] = res.second.data[i + size];
-        }
-
-        // mac check
-#if (LATER_CHECK)
-        // party.mac_buffer.add_value(res, mac_res, mac_key);
-        MAC_SIZE += res.size();
-#else
-        std::pair<T, T> mac_key = std::make_pair(0, 0);
-        macCheck(res, mac_res, mac_key);
-#endif
-    }
-    else
-    {
-        std::pair<T, T> one_share;
-        if (party.party_id == 0)
-        {
-            one_share = std::make_pair(1, 0);
-        }
-        else if (party.party_id == 1)
-        {
-            one_share = std::make_pair(0, 0);
-        }
-        else
-        {
-            one_share = std::make_pair(0, 1);
-        }
-
-        Tensor<T> res_33({double_size});
-
-        uint32_t idx_pre;
-        uint32_t idx_next;
-
-        T res_with_pre, res_with_next;
-
-#pragma omp parallel for
-        for (int i = 0; i < size; i++)
-        {
-            // 1
-            res_with_pre = 0;
-            res_with_next = 0;
-            for (int j = 0; j < table1_size; j++)
-            {
-                idx_pre = (j + dt_with_pre.data[i] + table1_size) % table1_size;
-                idx_next = (j + dt_with_next.data[i] + table1_size) % table1_size;
-
-                res_with_pre += parameter1.onehot_table_with_pre.data[idx_pre] * parameter1.table.data[j];
-                res_with_next += parameter1.onehot_table_with_next.data[idx_pre] * parameter1.table.data[j];
-            }
-            res_33.data[i] = one_share.first * res_with_pre + one_share.second * res_with_next;
-
-            // 2
-            res_with_pre = 0;
-            res_with_next = 0;
-            for (int j = 0; j < table2_size; j++)
-            {
-                idx_pre = (j + dt_with_pre.data[i + size] + table2_size) % table2_size;
-                idx_next = (j + dt_with_next.data[i + size] + table2_size) % table2_size;
-
-                res_with_pre += parameter2.onehot_table_with_pre.data[idx_pre] * parameter2.table.data[j];
-                res_with_next += parameter2.onehot_table_with_next.data[idx_pre] * parameter2.table.data[j];
-            }
-            res_33.data[i + size] = one_share.first * res_with_pre + one_share.second * res_with_next;
-        }
-
-        RSSTensor<T> res({double_size});
-        reshare(res_33, res);
-
-        for (int i = 0; i < size; i++)
-        {
-            res1.first.data[i] = res.first.data[i];
-            res1.second.data[i] = res.second.data[i];
-
-            res2.first.data[i] = res.first.data[i + size];
-            res2.second.data[i] = res.second.data[i + size];
-        }
-    }
 }
 
 template <typename T>
 void rss_protocols::utils::getk(RSSTensor<T> &x, RSSTensor<T> &k, Parameters<T> &parameters, bool malicious)
 {
-    // $b ^ k \le x < b ^ {k + 1}$ find k and calculate k + 1
-    Party3PC &party = Party3PC::getInstance();
-    uint32_t size = x.size();
-    uint32_t nexpb_size = (int)(log(pow(2, 2 * x.float_scale_bit)) / log(SCALE_BASE));
-    RSSTensor<T> delta({size, nexpb_size}); // x - b ^ i for i from 1 to max size
-
-    if (party.party_id == 0)
-    {
-#pragma omp parallel for
-        for (int i = 0; i < size; i++)
-        {
-            for (int j = 0; j < nexpb_size; j++)
-            {
-                delta.first.data[i * nexpb_size + j] = x.first.data[i] - (T)(pow(SCALE_BASE, j + 1));
-                delta.second.data[i * nexpb_size + j] = x.second.data[i];
-            }
-        }
-    }
-    else if (party.party_id == 1)
-    {
-#pragma omp parallel for
-        for (int i = 0; i < size; i++)
-        {
-            for (int j = 0; j < nexpb_size; j++)
-            {
-                delta.first.data[i * nexpb_size + j] = x.first.data[i];
-                delta.second.data[i * nexpb_size + j] = x.second.data[i];
-            }
-        }
-    }
-    else
-    {
-#pragma omp parallel for
-        for (int i = 0; i < size; i++)
-        {
-            for (int j = 0; j < nexpb_size; j++)
-            {
-                delta.first.data[i * nexpb_size + j] = x.first.data[i];
-                delta.second.data[i * nexpb_size + j] = x.second.data[i] - (T)(pow(SCALE_BASE, j + 1));
-            }
-        }
-    }
-    nonNegative(delta, delta, parameters, false, malicious);
-
-    // calculate k + 1
-    if (party.party_id == 0)
-    {
-#pragma omp parallel for
-        for (int i = 0; i < size; i++)
-        {
-            k.first.data[i] = 1;
-            k.second.data[i] = 0;
-            for (int j = 0; j < nexpb_size; j++)
-            {
-                k.first.data[i] += delta.first.data[i * nexpb_size + j];
-                k.second.data[i] += delta.second.data[i * nexpb_size + j];
-            }
-        }
-    }
-    else if (party.party_id == 1)
-    {
-#pragma omp parallel for
-        for (int i = 0; i < size; i++)
-        {
-            k.first.data[i] = 0;
-            k.second.data[i] = 0;
-            for (int j = 0; j < nexpb_size; j++)
-            {
-                k.first.data[i] += delta.first.data[i * nexpb_size + j];
-                k.second.data[i] += delta.second.data[i * nexpb_size + j];
-            }
-        }
-    }
-    else
-    {
-#pragma omp parallel for
-        for (int i = 0; i < size; i++)
-        {
-            k.first.data[i] = 0;
-            k.second.data[i] = 1;
-            for (int j = 0; j < nexpb_size; j++)
-            {
-                k.first.data[i] += delta.first.data[i * nexpb_size + j];
-                k.second.data[i] += delta.second.data[i * nexpb_size + j];
-            }
-        }
-    }
 }
 
 template <typename T>
 void rss_protocols::inv(RSSTensor<T> &x, RSSTensor<T> &res, Parameters<T> &parameters, bool malicious)
 {
-    RSSTensor<T> k(x.shape);
-    utils::getk(x, k, parameters, malicious);
-
-    // calculate b^(-(k+1))
-    lut(k, k, parameters.nexpb_param, malicious);
-
-    RSSTensor<T> b(x.shape);
-    mul(x, k, b, true, malicious); // b  = x * b^(-(k+1))
-    sub(b, (T)((1.0 / SCALE_BASE) * (1 << x.float_scale_bit)), b);
-    lut(b, b, parameters.inv_param, malicious);
-    mul(k, b, res, true, malicious);
 }
 
 template <typename T>
 void rss_protocols::rsqrt(RSSTensor<T> &x, RSSTensor<T> &res, Parameters<T> &parameters, bool malicious)
 {
-    RSSTensor<T> k(x.shape);
-    utils::getk(x, k, parameters, malicious);
-
-    // calculate b^(-(k+1)) and b^(-1/2(k+1))
-    RSSTensor<T> sqrt_nexpbk(k.shape), nexpbk(k.shape);
-    lut(k, sqrt_nexpbk, nexpbk, parameters.sqrt_nexpb_param, parameters.nexpb_param, malicious);
-
-    RSSTensor<T> b(x.shape);
-    mul(x, nexpbk, b, true, malicious); // b  = x * b^(-(k+1))
-    sub(b, (T)((1.0 / SCALE_BASE) * (1 << x.float_scale_bit)), b);
-    lut(b, b, parameters.rsqrt_param, malicious);
-    mul(sqrt_nexpbk, b, res, true, malicious);
 }
 
 template <typename T>
 void rss_protocols::utils::gelu_same_scale(RSSTensor<T> &x, RSSTensor<T> &res, Parameters<T> &parameters, bool malicious)
 {
-    T table_size = parameters.gelu_param.table_size;
-    uint32_t size = x.size();
-    RSSTensor<T> y(x.shape);
-
-    RSSTensor<T> dx(x.shape); // dx = relu(x)
-    rss_protocols::select(x, x, dx, parameters, malicious);
-
-    RSSTensor<T> abs_x(x.shape), sizeSubAbs(x.shape);
-    rss_protocols::mulConstSubBias(dx, (T)2, x, abs_x); // calculate abs_x = dx * 2 - x
-
-    rss_protocols::sub(table_size, abs_x, sizeSubAbs);
-    RSSTensor<T> ia(x.shape);
-    rss_protocols::select(sizeSubAbs, abs_x, ia, parameters, malicious);
-    rss_protocols::add(ia, (T)(table_size - 1), ia);
-    RSSTensor<T> c(x.shape);
-    rss_protocols::lut(ia, c, parameters.gelu_param, malicious);
-    rss_protocols::sub(dx, c, res);
 }
 
 template <typename T>
 void rss_protocols::gelu(RSSTensor<T> &x, RSSTensor<T> &res, Parameters<T> &parameters, bool malicious)
 {
-    if (x.float_scale_bit == GELU_TABLE_PRECISION)
-    {
-        utils::gelu_same_scale(x, res, parameters, malicious);
-    }
-    else
-    {
-        T table_size = parameters.gelu_param.table_size;
-        uint32_t size = x.size();
-        RSSTensor<T> y(x.shape);
-
-        truncate(x, y, 1 << (x.float_scale_bit - GELU_TABLE_PRECISION), malicious);
-
-        RSSTensor<T> x_and_y({2, size});
-#pragma omp parallel for
-        for (int i = 0; i < size; i++)
-        {
-            x_and_y.first.data[i] = x.first.data[i];
-            x_and_y.second.data[i] = x.second.data[i];
-            x_and_y.first.data[size + i] = y.first.data[i];
-            x_and_y.second.data[size + i] = y.second.data[i];
-        }
-
-        RSSTensor<T> dx_and_dy({2, size}); // dx = relu(x), dy = relu(y)
-        select(y, x_and_y, dx_and_dy, 2, parameters, malicious);
-        RSSTensor<T> dx(x.shape), dy(x.shape);
-
-#pragma omp parallel for
-        for (int i = 0; i < size; i++)
-        {
-            dx.first.data[i] = dx_and_dy.first.data[i];
-            dx.second.data[i] = dx_and_dy.second.data[i];
-            dy.first.data[i] = dx_and_dy.first.data[size + i];
-            dy.second.data[i] = dx_and_dy.second.data[size + i];
-        }
-
-        RSSTensor<T> abs_y(x.shape), sizeSubAbs(x.shape);
-        mulConstSubBias(dy, (T)2, y, abs_y); // calculate abs_y = dy * 2 - y
-
-        sub(table_size, abs_y, sizeSubAbs);
-        RSSTensor<T> ia(x.shape);
-        select(sizeSubAbs, abs_y, ia, parameters, malicious);
-        add(ia, (T)(table_size - 1), ia);
-        RSSTensor<T> c(x.shape);
-        lut(ia, c, parameters.gelu_param, malicious);
-        sub(dx, c, res);
-    }
 }
 
 template <typename T>
 void rss_protocols::max_last_dim(RSSTensor<T> &x, RSSTensor<T> &res, Parameters<T> &parameter, bool malicious)
 {
-    uint32_t last_dim_size = x.shape.back();
-    RSSTensor<T> tmp(x), even, odd, delta;
-    uint32_t freeze_size = res.size();
-    std::vector<uint32_t> new_shape = res.shape;
-    uint32_t half_size;
-
-    int index0, index1;
-
-    while (last_dim_size > 1)
-    {
-        half_size = (last_dim_size + 1) / 2;
-        new_shape.push_back(half_size);
-
-        even.allocate(new_shape);
-        odd.allocate(new_shape);
-        delta.allocate(new_shape);
-
-        for (uint32_t i = 0; i < freeze_size; ++i)
-        {
-            for (uint32_t j = 0; j < half_size - 1; ++j)
-            {
-                index0 = i * half_size + j;
-                index1 = i * last_dim_size + 2 * j;
-                even.first.data[index0] = tmp.first.data[index1];
-                even.second.data[index0] = tmp.second.data[index1];
-
-                odd.first.data[index0] = tmp.first.data[index1 + 1];
-                odd.second.data[index0] = tmp.second.data[index1 + 1];
-            }
-            index0 = i * half_size + half_size - 1;
-            index1 = i * last_dim_size + 2 * (half_size - 1);
-            even.first.data[index0] = tmp.first.data[index1];
-            even.second.data[index0] = tmp.second.data[index1];
-
-            odd.first.data[index0] = tmp.first.data[i * last_dim_size + last_dim_size - 1];
-            odd.second.data[index0] = tmp.second.data[i * last_dim_size + last_dim_size - 1];
-        }
-
-        sub(even, odd, delta);
-        select(delta, delta, delta, parameter, malicious);
-        add(odd, delta, even);
-        tmp = even;
-        even.free();
-        odd.free();
-        last_dim_size = half_size;
-        new_shape = res.shape;
-    }
-    res = tmp;
 }
 
 template <typename T>
 void rss_protocols::neg_exp(RSSTensor<T> &x, RSSTensor<T> &res, Parameters<T> &parameter, bool malicious)
 {
-    T ln2 = (T)(int)floor(log(2) * (1 << x.float_scale_bit));
-
-    uint32_t size = x.size();
-    RSSTensor<T> z(x.shape), p(x.shape), p2(x.shape), neg_exp2_z(x.shape), exp_p(x.shape);
-
-    mulConst(x, (T)(-1), z);
-    truncate(z, ln2, malicious);                                // z = -x / ln2
-    mulConstAddBias(z, ln2, x, p);                              // p = z * ln2 + x
-    add(p, (T)(int)floor(1.353 * (1 << x.float_scale_bit)), p); // p + 1.353
-    square(p, p2, true, malicious);                             // (p + 1.353) ^ 2
-    mulConst(p2, (T)(int)floor(0.3585 * (1 << x.float_scale_bit)), exp_p);
-    truncate(exp_p, malicious);
-    add(exp_p, (T)(int)floor(0.344 * (1 << x.float_scale_bit)), exp_p); // 0.3585 * (p + 1.353) ^ 2 + 0.344
-
-    // clip z by choose minimum one between z and scale
-    RSSTensor<T> z_minus_scale(z.shape), scale_minus_z(z.shape), min_s_z(z.shape);
-    sub((T)x.float_scale_bit, z, scale_minus_z);
-    sub(z, (T)x.float_scale_bit, z_minus_scale);
-    select(z_minus_scale, scale_minus_z, min_s_z, parameter, malicious);
-
-    if (Party3PC::getInstance().party_id == 0)
-    {
-        for (int i = 0; i < size; i++)
-        {
-            z.first.data[i] += min_s_z.first.data[i] + (T)x.float_scale_bit;
-            z.second.data[i] += min_s_z.second.data[i];
-        }
-    }
-    else if (Party3PC::getInstance().party_id == 1)
-    {
-        for (int i = 0; i < size; i++)
-        {
-            z.first.data[i] += min_s_z.first.data[i];
-            z.second.data[i] += min_s_z.second.data[i];
-        }
-    }
-    else
-    {
-        for (int i = 0; i < size; i++)
-        {
-            z.first.data[i] += min_s_z.first.data[i];
-            z.second.data[i] += min_s_z.second.data[i] + (T)x.float_scale_bit;
-        }
-    }
-
-    lut(z, neg_exp2_z, parameter.nexp2_param, malicious); // 2^(-k)
-    mul(exp_p, neg_exp2_z, res, true, malicious);
 }
 
 template <typename T>
 void rss_protocols::softmax_forward(RSSTensor<T> &x, RSSTensor<T> &res, Parameters<T> &parameter, bool malicious)
 {
-    /* only support dim = -1*/
-    std::vector<uint32_t> sum_shape = x.shape;
-    uint32_t dim_size = sum_shape.back();
-    sum_shape.pop_back();
-
-    RSSTensor<T> x_max(sum_shape), delta(x.shape);
-    uint32_t common_size = x_max.size();
-    max_last_dim(x, x_max, parameter, malicious);
-    int index;
-#pragma omp parallel for
-    for (int i = 0; i < common_size; i++)
-    {
-        for (int j = 0; j < dim_size; j++)
-        {
-            index = i * dim_size + j;
-            delta.first.data[index] = x.first.data[index] - x_max.first.data[i];
-            delta.second.data[index] = x.second.data[index] - x_max.second.data[i];
-        }
-    }
-
-    RSSTensor<T> exp_x(x.shape);
-    neg_exp(delta, exp_x, parameter, malicious);
-    RSSTensor<T> sum(sum_shape);
-
-#pragma omp parallel for
-    for (int i = 0; i < common_size; i++)
-    {
-        sum.first.data[i] = 0;
-        sum.second.data[i] = 0;
-        for (int j = 0; j < dim_size; j++)
-        {
-            sum.first.data[i] += exp_x.first.data[i * dim_size + j];
-            sum.second.data[i] += exp_x.second.data[i * dim_size + j];
-        }
-    }
-
-    inv(sum, sum, parameter, malicious);
-    RSSTensor<T> broadcast_sum(x.shape);
-#pragma omp parallel
-    for (int i = 0; i < common_size; i++)
-    {
-        for (int j = 0; j < dim_size; j++)
-        {
-            broadcast_sum.first.data[i * dim_size + j] = sum.first.data[i];
-            broadcast_sum.second.data[i * dim_size + j] = sum.second.data[i];
-        }
-    }
-    mul(exp_x, broadcast_sum, res, true, malicious);
 }
 
 template <typename T, typename U>
 void rss_protocols::downcast(RSSTensor<T> &x, RSSTensor<U> &res)
 {
-    int bit_len = sizeof(U) * 8;
-    for (int i = 0; i < x.size(); i++)
-    {
-        res.first.data[i] = (x.first.data[i] >> (x.float_scale_bit - res.float_scale_bit)) % ((uint64_t)1 << bit_len);
-        res.second.data[i] = (x.second.data[i] >> (x.float_scale_bit - res.float_scale_bit)) % ((uint64_t)1 << bit_len);
-    }
 }
 
 template <typename U, typename T>
 void rss_protocols::upcast(RSSTensor<U> &x, RSSTensor<T> &res, int party_id, bool malicious)
 {
-    RSSTensor<U> r(x.shape);
-    RSSTensor<T> r_upper(x.shape);
-    RSSTensor<T> s(x.shape); // s is the most significant bit of r_upper
-    r.zeros();
-    r_upper.zeros();
-    s.zeros();
-    uint32_t size = x.size();
-    int down_bit_len = sizeof(U) * 8;
-
-    U bias = 1 << (down_bit_len - 2);
-    uint64_t down_ring_max = 1ULL << down_bit_len;
-    uint64_t scale_delta = 1 << (res.float_scale_bit - x.float_scale_bit);
-    uint64_t w_first, w_second;
-    uint64_t is_x_hat_non_neg;
-    RSSTensor<U> x_hat(x.shape);
-    Tensor<U> x_hat_open(x.shape);
-
-    if (party_id == 0)
-    {
-        for (int i = 0; i < size; i++)
-        {
-            x_hat.first.data[i] = x.first.data[i] + r.first.data[i] + bias;
-            x_hat.second.data[i] = x.second.data[i] + r.second.data[i];
-        }
-
-        rss_protocols::restore(x_hat, x_hat_open, malicious);
-
-        for (int i = 0; i < size; i++)
-        {
-            is_x_hat_non_neg = (1 - (x_hat_open.data[i] >> (down_bit_len - 1)));
-            w_first = s.first.data[i] * is_x_hat_non_neg;
-            w_second = s.second.data[i] * is_x_hat_non_neg;
-
-            res.first.data[i] = (x_hat_open.data[i] - r_upper.first.data[i] + w_first * down_ring_max - bias) * scale_delta;
-            res.second.data[i] = (-r_upper.first.data[i] + w_second * down_ring_max) * scale_delta;
-        }
-    }
-    else if (party_id == 1)
-    {
-        for (int i = 0; i < size; i++)
-        {
-            x_hat.first.data[i] = x.first.data[i] + r.first.data[i];
-            x_hat.second.data[i] = x.second.data[i] + r.second.data[i];
-        }
-
-        rss_protocols::restore(x_hat, x_hat_open, malicious);
-
-        for (int i = 0; i < size; i++)
-        {
-            is_x_hat_non_neg = (1 - (x_hat_open.data[i] >> (down_bit_len - 1)));
-            w_first = s.first.data[i] * is_x_hat_non_neg;
-            w_second = s.second.data[i] * is_x_hat_non_neg;
-
-            res.first.data[i] = (-r_upper.first.data[i] + w_first * down_ring_max) * scale_delta;
-            res.second.data[i] = (-r_upper.first.data[i] + w_second * down_ring_max) * scale_delta;
-        }
-    }
-    else
-    {
-        for (int i = 0; i < size; i++)
-        {
-            x_hat.first.data[i] = x.first.data[i] + r.first.data[i];
-            x_hat.second.data[i] = x.second.data[i] + r.second.data[i] + bias;
-        }
-
-        rss_protocols::restore(x_hat, x_hat_open, malicious);
-
-        for (int i = 0; i < size; i++)
-        {
-            is_x_hat_non_neg = (1 - (x_hat_open.data[i] >> (down_bit_len - 1)));
-            w_first = s.first.data[i] * is_x_hat_non_neg;
-            w_second = s.second.data[i] * is_x_hat_non_neg;
-
-            res.first.data[i] = (-r_upper.first.data[i] + w_first * down_ring_max) * scale_delta;
-            res.second.data[i] = (x_hat_open.data[i] - r_upper.first.data[i] + w_second * down_ring_max - bias) * scale_delta;
-        }
-    }
 }

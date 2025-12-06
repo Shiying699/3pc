@@ -160,9 +160,9 @@ void RssTest::main_test(int party_id)
     // test_func<Party3PC>(max_test<ringType>, "max", loop, warm_up, x_share, max_share, parameters);
     // open_print(max_share, party_id, print_res);
 
-    // // test TableEqual
-    // test_func<Party3PC>(table_equal_test<ringType>, "table equal", loop, warm_up, x_share, y_share, z_share, parameters);
-    // open_print(z_share, party_id, print_res);
+    // test TableEqual
+    test_func<Party3PC>(table_equal_test<ringType>, "table equal", loop, warm_up, x_share, y_share, z_share, parameters);
+    open_print(z_share, party_id, print_res);
 
     // test TableGreaterEqual
     test_func<Party3PC>(table_ge_test<ringType>, "table greater equal", loop, warm_up, x_share, y_share, z_share, parameters);
@@ -317,13 +317,13 @@ void max_test(RSSTensor<T> &x_share, RSSTensor<T> &z_share, Parameters<T> &param
 template <typename T>
 void table_equal_test(RSSTensor<T> &x_share, RSSTensor<T> &y_share, RSSTensor<T> &z_share, Parameters<T> &param)
 {
-    table_Equal(x_share, y_share, z_share, param);
+    table_Equal(x_share, y_share, z_share, param, true, true, IS_MALICIOUS);
 }
 
 template <typename T>
 void table_ge_test(RSSTensor<T> &x_share, RSSTensor<T> &y_share, RSSTensor<T> &z_share, Parameters<T> &param)
 {
-    table_greaterEqual(x_share, y_share, z_share, param);
+    table_greaterEqual(x_share, y_share, z_share, param, true, true, IS_MALICIOUS);
 }
 
 template <typename T>
